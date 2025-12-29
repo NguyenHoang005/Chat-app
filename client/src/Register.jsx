@@ -2,7 +2,7 @@ import { useState } from "react";
 import axios from "axios";
 import { useNavigate } from "react-router-dom";
 
-const API_BASE = "http://10.24.42.16:8080"; // Đổi IP LAN của server
+const API_BASE = "http://localhost:8080"; // Đổi IP LAN của server
 
 const Register = () => {
   const navigate = useNavigate();

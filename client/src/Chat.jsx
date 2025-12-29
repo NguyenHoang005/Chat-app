@@ -12,7 +12,7 @@ import { MdSend } from "react-icons/md";
 import EmojiPicker from "emoji-picker-react";
 import { io } from "socket.io-client";
 
-const API_BASE = "http://10.24.42.16:8080";
+const API_BASE = "http://localhost:8080";
 
 // Hàm tính "Hoạt động X phút/giờ trước"
 const timeAgo = (timestamp) => {
