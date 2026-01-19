@@ -2,7 +2,7 @@ import { useState } from "react";
 import axios from "axios";
 import { useNavigate } from "react-router-dom";
 
-const API_BASE = "http://localhost:8080"; // Đổi IP LAN của server
+const API_BASE = "http://localhost:8080"; 
 
 const Register = () => {
   const navigate = useNavigate();
@@ -58,7 +58,7 @@ const Register = () => {
     }
 
     try {
-      await axios.post(`${API_BASE}/register`, {
+      await axios.post(`${API_BASE}/api/auth/register`, {
         username: form.username.trim(),
         email: form.email.trim(),
         password: form.password

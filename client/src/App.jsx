@@ -4,6 +4,7 @@ import Login from "./login";
 import Chat from "./Chat";
 import Register from "./Register";
 import OAuthSuccess from "./OAuthSuccess";
+import Profile from "./Profile";
 
 function App() {
   return (
@@ -13,6 +14,7 @@ function App() {
       <Route path="/" element={<Login />} />
       <Route path="/oauth-success" element={<OAuthSuccess />} />
         <Route path="/register" element={<Register />} />
+        <Route path="/profile/:id" element={<Profile />} />
     </Routes>
   );
 }

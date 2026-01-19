@@ -11,8 +11,11 @@ import {
 import { MdSend } from "react-icons/md";
 import EmojiPicker from "emoji-picker-react";
 import { io } from "socket.io-client";
+import { useNavigate } from "react-router-dom";
 
-const API_BASE = "http://localhost:8080";
+const API_BASE = "http://localhost:8080/api";
+const SOCKET_BASE = "http://localhost:8080";
+
 
 // Hàm tính "Hoạt động X phút/giờ trước"
 const timeAgo = (timestamp) => {
@@ -28,6 +31,7 @@ const timeAgo = (timestamp) => {
 };
 
 const Chat = () => {
+  const navigate = useNavigate();
   const [message, setMessage] = useState("");
   const [chatWith, setChatWith] = useState(null);
   const [allMessages, setAllMessages] = useState({});
@@ -38,6 +42,7 @@ const Chat = () => {
   const messagesEndRef = useRef(null);
   const socketRef = useRef(null);
   const audioRef = useRef(null);
+  
 
   // state cho tạo nhóm
   const [showCreateGroup, setShowCreateGroup] = useState(false);
@@ -51,14 +56,14 @@ const Chat = () => {
 
   // Hàm lấy danh sách user + nhóm
   const fetchConversations = async () => {
-    try {
+    try { 
       // Gọi API users
-      const usersRes = await fetch(`${API_BASE.replace(/\/$/, "")}/users`);
+      const usersRes = await fetch(`${API_BASE}/users`);
       if (!usersRes.ok) throw new Error(usersRes.statusText);
       const usersData = await usersRes.json();
 
       // Gọi API groups
-      const groupsRes = await fetch(`${API_BASE.replace(/\/$/, "")}/groups`);
+      const groupsRes = await fetch(`${API_BASE}/groups`);
       if (!groupsRes.ok) throw new Error(groupsRes.statusText);
       const groupsData = await groupsRes.json();
 
@@ -101,7 +106,7 @@ const Chat = () => {
       return;
     }
 
-    const socket = io(API_BASE, {
+    const socket = io(SOCKET_BASE, {
       transports: ["websocket"],
       path: "/socket.io",
       query: { userId: currentUserId },
@@ -172,9 +177,7 @@ const Chat = () => {
     if (!chatWith || !currentUserId) return;
     const fetchMessages = async () => {
       try {
-        const url = `${API_BASE}/messages/${encodeURIComponent(
-          chatWith.id
-        )}?user=${encodeURIComponent(currentUserId)}`;
+        const url = `${API_BASE}/messages/${chatWith.id}?user=${currentUserId}`;
         const res = await fetch(url);
         if (!res.ok) throw new Error(res.statusText);
         const data = await res.json();
@@ -305,7 +308,33 @@ const Chat = () => {
         {/* Sidebar */}
         <div className="col-md-4 col-lg-3">
           <div className="chat-sidebar p-3 bg-white rounded">
-            <div className="d-flex justify-content-between align-items-center mb-3">
+             {/* Current User Profile */}
+            <div
+              className="d-flex align-items-center gap-2 mb-3 p-2 rounded"
+              style={{ cursor: "pointer", background: "#f5f6f7" }}
+              onClick={() => navigate(`/profile/${currentUserId}`)}
+            >
+              <img
+                src={
+                  rawUser.avatar
+                    ? `http://localhost:8080${rawUser.avatar}`
+                    : "https://i.pravatar.cc/150"
+                }
+                alt="me"
+                className="rounded-circle"
+                style={{ width: 40, height: 40, objectFit: "cover" }}
+              />
+              <div className="flex-grow-1">
+                <div className="fw-bold">{currentUsername}</div>
+                <div style={{ fontSize: 12, color: "gray" }}>
+                  Xem profile
+                </div>
+              </div>
+            </div>
+
+
+                <hr />
+               <div className="d-flex justify-content-between align-items-center mb-3">
               <h5 className="mb-0">Đoạn chat</h5>
               <button
                 className="btn btn-sm btn-success"

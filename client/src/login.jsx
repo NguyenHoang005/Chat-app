@@ -16,7 +16,7 @@ const Login = () => {
   const handleLogin = async (e) => {
     e.preventDefault();
     try {
-      const res = await axios.post("http://localhost:8080/login", form);
+      const res = await axios.post("http://localhost:8080/api/auth/login", form);
       setMessage(res.data.message);
       localStorage.setItem("user", JSON.stringify(res.data.user));
        localStorage.setItem("token", res.data.token); // Lưu token để dùng API sau
