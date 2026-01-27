@@ -2,8 +2,6 @@ const { Server } = require("socket.io");
 const User = require("../models/User");
 const Message = require("../models/Message");
 
-const onlineUsers = new Map();
-
 module.exports.initSocket = function (server) {
   const io = new Server(server, { cors: { origin: "*" } });
 
@@ -17,12 +15,48 @@ module.exports.initSocket = function (server) {
       );
     }
 
+    // ================= CHAT MESSAGE =================
     socket.on("chatMessage", async (msg) => {
       const saved = await Message.create(msg);
-      if (msg.groupId) io.to(msg.groupId).emit("chatMessage", saved);
-      else {
+
+      if (msg.groupId) {
+        io.to(msg.groupId).emit("chatMessage", saved);
+      } else {
         io.to(saved.fromId).emit("chatMessage", saved);
         io.to(saved.to).emit("chatMessage", saved);
+      }
+    });
+
+    // ================= TYPING =================
+    socket.on("typing", ({ to, groupId, from }) => {
+      if (groupId) {
+        socket.to(groupId).emit("typing", { from, groupId });
+      } else {
+        io.to(to).emit("typing", { from });
+      }
+    });
+
+    socket.on("stopTyping", ({ to, groupId, from }) => {
+      if (groupId) {
+        socket.to(groupId).emit("stopTyping", { from, groupId });
+      } else {
+        io.to(to).emit("stopTyping", { from });
+      }
+    });
+
+    // ================= SEEN =================
+    socket.on("seenMessage", async ({ messageId, userId, groupId }) => {
+      if (groupId) {
+        await Message.findByIdAndUpdate(messageId, {
+          $addToSet: { seenBy: userId },
+        });
+        io.to(groupId).emit("messageSeen", { messageId, userId });
+      } else {
+        await Message.findByIdAndUpdate(messageId, { seen: true });
+        io.to(saved.fromId).emit("messageSeen", {
+  messageId,
+  from: saved.to,
+});
       }
     });
 

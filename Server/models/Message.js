@@ -9,6 +9,11 @@ module.exports = mongoose.model(
     text: String,
     time: String,
     groupId: String,
+
+    // ===== ADDED: SEEN =====
+    seen: { type: Boolean, default: false }, // 1–1
+    seenBy: { type: [String], default: [] }, // group
+
     timestamp: { type: Date, default: Date.now },
   })
 );
