@@ -42,7 +42,10 @@ const Chat = () => {
   const messagesEndRef = useRef(null);
   const socketRef = useRef(null);
   const audioRef = useRef(null);
-  
+  const [typingUsers, setTypingUsers] = useState({});
+  const typingTimeoutRef = useRef(null);
+  const [editingMessageId, setEditingMessageId] = useState(null);
+const [editingText, setEditingText] = useState("");
 
   // state cho tạo nhóm
   const [showCreateGroup, setShowCreateGroup] = useState(false);
@@ -138,7 +141,38 @@ const Chat = () => {
       );
     });
 
-    socket.on("chatMessage", (msg) => {
+            // ===== ADDED: TYPING =====
+        socket.on("typing", ({ from, groupId }) => {
+          console.log("⌨️ TYPING EVENT FROM:", from, "group:", groupId);
+          setTypingUsers((prev) => ({
+            ...prev,
+            [groupId || from]: true,
+          }));
+        });
+
+        socket.on("stopTyping", ({ from, groupId }) => {
+          console.log("🛑 STOP TYPING FROM:", from, "group:", groupId);
+          setTypingUsers((prev) => {
+            const copy = { ...prev };
+            delete copy[groupId || from];
+            return copy;
+          });
+        });
+
+        // ===== MESSAGE SEEN =====
+          socket.on("messageSeen", ({ messageId, from }) => {
+  setAllMessages((prev) => {
+    if (!prev[from]) return prev;
+        return {
+          ...prev,
+          [from]: prev[from].map((m) =>
+            m._id === messageId ? { ...m, seen: true } : m
+          ),
+       };
+       });
+      });
+
+      socket.on("chatMessage", (msg) => {
       const partnerId =
         String(msg.fromId) === String(currentUserId)
           ? String(msg.to)
@@ -146,7 +180,6 @@ const Chat = () => {
 
       setAllMessages((prev) => {
         const list = prev[partnerId] ? [...prev[partnerId]] : [];
-        if (msg._id && list.some((m) => m._id === msg._id)) return prev;
         return { ...prev, [partnerId]: [...list, msg] };
       });
 
@@ -166,7 +199,7 @@ const Chat = () => {
       socket.disconnect();
       socketRef.current = null;
     };
-  }, [currentUserId, chatWith]);
+  }, [currentUserId]);
 
   // Lấy danh sách user + nhóm ban đầu
   useEffect(() => {
@@ -191,9 +224,71 @@ const Chat = () => {
   }, [chatWith, currentUserId]);
 
   useEffect(() => {
+  setTypingUsers({});
+}, [chatWith]);
+
+useEffect(() => {
+  const handler = (e) => {
+    const updated = e.detail;
+
+    // update sidebar conversations
+    setConversations((prev) =>
+      prev.map((c) =>
+        String(c.id) === String(updated._id)
+          ? {
+              ...c,
+              username: updated.displayName || c.username,
+              avatar: updated.avatar
+                ? `http://localhost:8080${updated.avatar}`
+                : c.avatar,
+            }
+          : c
+      )
+    );
+
+    // update header chat đang mở
+    setChatWith((prev) =>
+      prev && String(prev.id) === String(updated._id)
+        ? {
+            ...prev,
+            username: updated.displayName || prev.username,
+            avatar: updated.avatar
+              ? `http://localhost:8080${updated.avatar}`
+              : prev.avatar,
+          }
+        : prev
+    );
+  };
+
+  window.addEventListener("profileUpdated", handler);
+  return () =>
+    window.removeEventListener("profileUpdated", handler);
+}, []);
+
+
+  useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [allMessages, chatWith]);
+    
+     useEffect(() => {
+  if (!chatWith) return;
 
+  const msgs = allMessages[chatWith.id] || [];
+  const unseen = msgs.filter(
+    (m) =>
+      !m.seen &&
+      String(m.fromId) !== String(currentUserId)
+  );
+
+  unseen.forEach((m) => {
+    socketRef.current?.emit("seenMessage", {
+      messageId: m._id,
+      userId: currentUserId,
+    });
+  });
+}, [allMessages, chatWith]);
+
+   
   const handleSend = (e) => {
     e?.preventDefault();
     if (!chatWith || !message.trim()) return;
@@ -372,25 +467,31 @@ const Chat = () => {
                   style={{ cursor: "pointer" }}
                 >
                   <div className="position-relative">
-                    <img
-                      src={conv.avatar}
-                      alt={conv.username}
-                      className="rounded-circle"
-                      style={{
-                        width: "40px",
-                        height: "40px",
-                        objectFit: "cover",
-                      }}
-                    />
-                    <span
-                      className="position-absolute bottom-0 end-0 border border-white rounded-circle"
-                      style={{
-                        width: "10px",
-                        height: "10px",
-                        backgroundColor: conv.online ? "green" : "gray",
-                      }}
-                    />
-                  </div>
+                  <img
+                    src={conv.avatar}
+                    alt={conv.username}
+                    className="rounded-circle"
+                    style={{
+                      width: "40px",
+                      height: "40px",
+                      objectFit: "cover",
+                      cursor: "pointer",
+                    }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      navigate(`/profile/${conv.id}`);
+                    }}
+                  />
+                  <span
+                    className="position-absolute bottom-0 end-0 border border-white rounded-circle"
+                    style={{
+                      width: "10px",
+                      height: "10px",
+                      backgroundColor: conv.online ? "green" : "gray",
+                    }}
+                  />
+                </div>
+
                   <div className="flex-grow-1">
                     <div className="fw-bold">{conv.username}</div>
                     <div
@@ -430,11 +531,8 @@ const Chat = () => {
                   <>
                     <h5
                       className="mb-0"
-                      style={{
-                        fontSize: "1.2rem",
-                        fontWeight: "bold",
-                        color: "#fff",
-                      }}
+                      style={{ cursor: "pointer" }}
+                      onClick={() => navigate(`/profile/${chatWith.id}`)}
                     >
                       💬 {chatWith.username}
                     </h5>
@@ -445,12 +543,7 @@ const Chat = () => {
                         color: "#fff",
                       }}
                     >
-                      {chatWith.online
-                        ? "Hoạt động"
-                        : chatWith.lastSeen
-                        ? `Hoạt động ${timeAgo(chatWith.lastSeen)}`
-                        : "Offline"}
-                    </div>
+                        </div>
                   </>
                 )}
               </div>
@@ -467,46 +560,127 @@ const Chat = () => {
               style={{ height: "400px", overflowY: "auto" }}
             >
               {!chatWith ? (
-                <div className="text-center text-muted mt-5">
-                  👈 Chọn người để bắt đầu nhắn tin
-                </div>
-              ) : (
-                (allMessages[chatWith.id] || []).map((msg, index) => {
-                  const fromId =
-                    msg.fromId ||
-                    msg.from ||
-                    (msg.username === currentUsername
-                      ? currentUserId
-                      : null);
-                  const isOwnMessage =
-                    String(fromId) === String(currentUserId);
-                  return (
-                    <div
-                      key={msg._id || index}
-                      className={`mb-3 d-flex ${
-                        isOwnMessage
-                          ? "justify-content-end"
-                          : "justify-content-start"
-                      }`}
-                    >
-                      <div
-                        className="p-2 rounded bg-light border"
-                        style={{ maxWidth: "75%" }}
-                      >
-                        <div className="small">{msg.text}</div>
-                        <div className="text-end small text-muted mt-1">
-                          {msg.time}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })
+  <div className="text-center text-muted mt-5">
+    👈 Chọn người để bắt đầu nhắn tin
+  </div>
+) : (
+  <>
+    {(allMessages[chatWith.id] || []).map((msg, index) => {
+      const fromId =
+        msg.fromId ||
+        msg.from ||
+        (msg.username === currentUsername ? currentUserId : null);
+
+      const isOwnMessage = String(fromId) === String(currentUserId);
+
+      return (
+        <div
+          key={msg._id || index}
+          className={`mb-3 d-flex ${
+            isOwnMessage ? "justify-content-end" : "justify-content-start"
+          }`}
+        >
+          <div
+  className="p-2 rounded bg-light border position-relative"
+  style={{ maxWidth: "75%" }}
+>
+            {editingMessageId === msg._id ? (
+  <input
+    className="form-control form-control-sm"
+    value={editingText}
+    onChange={(e) => setEditingText(e.target.value)}
+    onKeyDown={async (e) => {
+      if (e.key === "Enter") {
+        await fetch(`${API_BASE}/messages/${msg._id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            text: editingText,
+            userId: currentUserId,
+          }),
+        });
+
+        setAllMessages((prev) => ({
+          ...prev,
+          [chatWith.id]: prev[chatWith.id].map((m) =>
+            m._id === msg._id ? { ...m, text: editingText } : m
+          ),
+        }));
+
+        setEditingMessageId(null);
+      }
+    }}
+  />
+) : (
+  <div className="small">{msg.text}</div>
+)}
+{isOwnMessage && editingMessageId !== msg._id && (
+  <div
+    className="position-absolute top-0 end-0 d-flex gap-1"
+    style={{ transform: "translate(50%, -50%)" }}
+  >
+    <button
+      className="btn btn-sm btn-light"
+      onClick={() => {
+        setEditingMessageId(msg._id);
+        setEditingText(msg.text);
+      }}
+    >
+      ✏️
+    </button>
+    <button
+      className="btn btn-sm btn-light"
+      onClick={async () => {
+        await fetch(`${API_BASE}/messages/${msg._id}`, {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ userId: currentUserId }),
+        });
+
+        setAllMessages((prev) => ({
+          ...prev,
+          [chatWith.id]: prev[chatWith.id].filter(
+            (m) => m._id !== msg._id
+          ),
+        }));
+      }}
+    >
+      🗑
+    </button>
+  </div>
+)}
+
+            <div className="text-end small text-muted mt-1">
+              {msg.time}
+              {isOwnMessage && (
+                <span className="ms-1">{msg.seen ? "✓✓" : "✓"}</span>
               )}
-              <div ref={messagesEndRef} />
+            </div>
+          </div>
+        </div>
+      );
+    })}
+
+    {/* ✅ typing bubble đúng chỗ */}
+    {typingUsers[chatWith.id] && (
+      <div className="mb-3 d-flex justify-content-start">
+        <div className="typing-bubble">
+          <span className="dot"></span>
+          <span className="dot"></span>
+          <span className="dot"></span>     
+        </div>
+      </div>
+    )}
+
+    <div ref={messagesEndRef} />
+  </>
+)}
+
             </div>
 
             {chatWith && (
               <div className="card-footer bg-white border-top position-relative">
+
                 <form
                   onSubmit={handleSend}
                   className="d-flex align-items-center gap-2"
@@ -535,8 +709,28 @@ const Chat = () => {
                   <input
                     type="text"
                     value={message}
-                    onChange={(e) => setMessage(e.target.value)}
-                    className="form-control"
+                    onChange={(e) => {
+                    setMessage(e.target.value);
+
+                    if (!socketRef.current) return;
+
+                    socketRef.current.emit("typing", {
+                      from: currentUserId,
+                      to: chatWith.id,
+                    });
+
+                    if (typingTimeoutRef.current) {
+                      clearTimeout(typingTimeoutRef.current);
+                    }
+
+                    typingTimeoutRef.current = setTimeout(() => {
+                      socketRef.current.emit("stopTyping", {
+                        from: currentUserId,
+                        to: chatWith.id,
+                      });
+                    }, 100000);
+                  }}
+                     className="form-control"
                     placeholder="Nhập tin nhắn..."
                   />
                   <button
