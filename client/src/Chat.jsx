@@ -46,6 +46,10 @@ const Chat = () => {
   const typingTimeoutRef = useRef(null);
   const [editingMessageId, setEditingMessageId] = useState(null);
 const [editingText, setEditingText] = useState("");
+const [contextMessageId, setContextMessageId] = useState(null);
+const contextMenuRef = useRef(null);
+const emojiRef = useRef(null);
+const emojiButtonRef = useRef(null);
 
   // state cho tạo nhóm
   const [showCreateGroup, setShowCreateGroup] = useState(false);
@@ -194,7 +198,7 @@ const [editingText, setEditingText] = useState("");
         }
       }
     });
-
+      
     return () => {
       socket.disconnect();
       socketRef.current = null;
@@ -226,6 +230,48 @@ const [editingText, setEditingText] = useState("");
   useEffect(() => {
   setTypingUsers({});
 }, [chatWith]);
+useEffect(() => {
+  setShowEmojiPicker(false);
+}, [chatWith]);
+
+// ✅ THOÁT EDIT KHI ĐỔI NGƯỜI CHAT
+useEffect(() => {
+  setEditingMessageId(null);
+  setEditingText("");
+}, [chatWith]);
+
+// ✅ THOÁT EDIT KHI CÓ TIN NHẮN MỚI / LIST MESSAGE ĐỔI
+useEffect(() => {
+  setEditingMessageId(null);
+  setEditingText("");
+}, [allMessages]);
+useEffect(() => {
+  const handleClickOutside = (e) => {
+    if (
+      contextMenuRef.current &&
+      !contextMenuRef.current.contains(e.target)
+    ) {
+      setContextMessageId(null);
+    }
+    if (
+      emojiRef.current &&
+      !emojiRef.current.contains(e.target) &&
+      emojiButtonRef.current &&
+      !emojiButtonRef.current.contains(e.target)
+    ) {
+      setShowEmojiPicker(false);
+    }
+  };
+
+  document.addEventListener("mousedown", handleClickOutside);
+  document.addEventListener("click", handleClickOutside);
+  return () => {
+    document.removeEventListener("mousedown", handleClickOutside);
+    document.removeEventListener("click", handleClickOutside);
+  };
+}, []);
+
+
 
 useEffect(() => {
   const handler = (e) => {
@@ -292,6 +338,7 @@ useEffect(() => {
   const handleSend = (e) => {
     e?.preventDefault();
     if (!chatWith || !message.trim()) return;
+    setShowEmojiPicker(false);
     const msgObj = {
       username: currentUsername,
       fromId: String(currentUserId),
@@ -313,6 +360,42 @@ useEffect(() => {
   const filteredConversations = conversations.filter((c) =>
     c.username.toLowerCase().includes(searchQuery.toLowerCase())
   );
+
+const EDIT_LIMIT_MINUTES = 5;
+
+// kiểm tra thời gian
+const isWithinEditTime = (msg) => {
+  if (!msg.timestamp) return false;
+
+  const now = Date.now();
+  const sent = new Date(msg.timestamp).getTime();
+  return (now - sent) / (1000 * 60) <= EDIT_LIMIT_MINUTES;
+};
+
+// ✏️ CHỈNH SỬA
+// ❌ recalled | ❌ seen | ❌ quá 5 phút
+const canEditMessage = (msg) => {
+  if (msg.recalled) return false;
+  if (msg.seen) return false;
+  return isWithinEditTime(msg);
+};
+
+// ↩️ THU HỒI (XOÁ MỌI NGƯỜI)
+// ❌ recalled | ❌ quá 5 phút
+// ✅ seen vẫn thu hồi được
+const canRecallMessage = (msg) => {
+  if (msg.recalled) return false;
+  return isWithinEditTime(msg);
+};
+
+// 🗑 XOÁ PHÍA TÔI
+// ❌ nếu đã recalled
+const canDeleteForMe = (msg) => {
+  return !msg.recalled;
+};
+
+
+
 
   return (
     <div
@@ -581,83 +664,138 @@ useEffect(() => {
           }`}
         >
           <div
-  className="p-2 rounded bg-light border position-relative"
-  style={{ maxWidth: "75%" }}
+  className="p-2 rounded bg-light border position-relative message-bubble"
+  onClick={() => {
+    if (isOwnMessage) {
+      setContextMessageId(
+        contextMessageId === msg._id ? null : msg._id
+      );
+    }
+  }}
 >
-            {editingMessageId === msg._id ? (
-  <input
-    className="form-control form-control-sm"
-    value={editingText}
-    onChange={(e) => setEditingText(e.target.value)}
-    onKeyDown={async (e) => {
-      if (e.key === "Enter") {
-        await fetch(`${API_BASE}/messages/${msg._id}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            text: editingText,
-            userId: currentUserId,
-          }),
-        });
-
-        setAllMessages((prev) => ({
-          ...prev,
-          [chatWith.id]: prev[chatWith.id].map((m) =>
-            m._id === msg._id ? { ...m, text: editingText } : m
-          ),
-        }));
-
+  {/* ===== CONTENT ===== */}
+  {editingMessageId === msg._id ? (
+    <input
+      autoFocus
+      className="form-control form-control-sm"
+      value={editingText}
+      onChange={(e) => setEditingText(e.target.value)}
+      onBlur={() => {
         setEditingMessageId(null);
-      }
-    }}
-  />
-) : (
-  <div className="small">{msg.text}</div>
-)}
-{isOwnMessage && editingMessageId !== msg._id && (
-  <div
-    className="position-absolute top-0 end-0 d-flex gap-1"
-    style={{ transform: "translate(50%, -50%)" }}
-  >
-    <button
-      className="btn btn-sm btn-light"
-      onClick={() => {
-        setEditingMessageId(msg._id);
-        setEditingText(msg.text);
+        setEditingText("");
       }}
-    >
-      ✏️
-    </button>
-    <button
-      className="btn btn-sm btn-light"
-      onClick={async () => {
-        await fetch(`${API_BASE}/messages/${msg._id}`, {
-          method: "DELETE",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ userId: currentUserId }),
-        });
+      onKeyDown={async (e) => {
+        if (e.key === "Escape") {
+          setEditingMessageId(null);
+          setEditingText("");
+        }
 
-        setAllMessages((prev) => ({
-          ...prev,
-          [chatWith.id]: prev[chatWith.id].filter(
-            (m) => m._id !== msg._id
-          ),
-        }));
+        if (e.key === "Enter") {
+          await fetch(`${API_BASE}/messages/${msg._id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              text: editingText,
+              userId: currentUserId,
+            }),
+          });
+
+          setAllMessages((prev) => ({
+            ...prev,
+            [chatWith.id]: prev[chatWith.id].map((m) =>
+              m._id === msg._id
+                ? { ...m, text: editingText }
+                : m
+            ),
+          }));
+
+          setEditingMessageId(null);
+          setEditingText("");
+        }
       }}
-    >
-      🗑
-    </button>
+    />
+  ) : (
+    <div className={`small ${msg.recalled ? "text-muted fst-italic" : ""}`}>
+      {msg.recalled ? "🚫 Tin nhắn đã bị thu hồi" : msg.text}
+    </div>
+  )}
+
+  {/* ===== MENU ===== */}
+  {contextMessageId === msg._id && isOwnMessage && (
+    <div ref={contextMenuRef} className="message-menu">
+      {canEditMessage(msg) && (
+        <button
+          onClick={() => {
+            setEditingMessageId(msg._id);
+            setEditingText(msg.text);
+            setContextMessageId(null);
+          }}
+        >
+          ✏️ Chỉnh sửa
+        </button>
+      )}
+
+      {canRecallMessage(msg) && (
+        <button
+          onClick={async () => {
+            await fetch(
+              `${API_BASE}/messages/${msg._id}/recall`,
+              {
+                method: "PATCH",
+                headers: {
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                  userId: currentUserId,
+                }),
+              }
+            );
+
+            setAllMessages((prev) => ({
+              ...prev,
+              [chatWith.id]: prev[chatWith.id].map((m) =>
+                m._id === msg._id
+                  ? { ...m, recalled: true }
+                  : m
+              ),
+            }));
+
+            setContextMessageId(null);
+          }}
+        >
+          ↩️ Thu hồi (mọi người)
+        </button>
+      )}
+
+      {canDeleteForMe(msg) && (
+        <button
+          className="danger"
+          onClick={() => {
+            setAllMessages((prev) => ({
+              ...prev,
+              [chatWith.id]: prev[chatWith.id].filter(
+                (m) => m._id !== msg._id
+              ),
+            }));
+
+            setContextMessageId(null);
+          }}
+        >
+          🗑 Xoá phía tôi
+        </button>
+      )}
+    </div>
+  )}
+
+  {/* ===== META ===== */}
+  <div className="text-end small text-muted mt-1">
+    {msg.time}
+    {isOwnMessage && (
+      <span className="ms-1">{msg.seen ? "✓✓" : "✓"}</span>
+    )}
   </div>
-)}
-
-            <div className="text-end small text-muted mt-1">
-              {msg.time}
-              {isOwnMessage && (
-                <span className="ms-1">{msg.seen ? "✓✓" : "✓"}</span>
-              )}
-            </div>
-          </div>
-        </div>
+</div>
+  </div>
       );
     })}
 
@@ -685,27 +823,29 @@ useEffect(() => {
                   onSubmit={handleSend}
                   className="d-flex align-items-center gap-2"
                 >
-                  <button
-                    type="button"
-                    className="emoji-button btn btn-light"
-                    onClick={() =>
-                      setShowEmojiPicker(!showEmojiPicker)
-                    }
-                    title="Chọn emoji"
-                  >
-                    <FaSmile />
-                  </button>
-                  {showEmojiPicker && (
-                    <div
-                      className="emoji-picker-container position-absolute"
-                      style={{
-                        bottom: "60px",
-                        zIndex: 1000,
+                                      <button
+                      ref={emojiButtonRef}
+                      type="button"
+                      className="emoji-button btn btn-light"
+                      onClick={(e) => {
+                        e.stopPropagation(); // 👈 QUAN TRỌNG
+                        setShowEmojiPicker((prev) => !prev);
                       }}
+                      title="Chọn emoji"
                     >
-                      <EmojiPicker onEmojiClick={handleEmojiClick} />
-                    </div>
-                  )}
+                      <FaSmile />
+                    </button>
+                  {showEmojiPicker && (
+                  <div
+                    ref={emojiRef}
+                    className="emoji-picker-container position-absolute"
+                    style={{ bottom: "60px", zIndex: 1000 }}
+                    onClick={(e) => e.stopPropagation()} // 👈 QUAN TRỌNG
+                  >
+                    <EmojiPicker onEmojiClick={handleEmojiClick} />
+                  </div>
+                )}
+
                   <input
                     type="text"
                     value={message}
@@ -728,7 +868,7 @@ useEffect(() => {
                         from: currentUserId,
                         to: chatWith.id,
                       });
-                    }, 100000);
+                    }, 2000);
                   }}
                      className="form-control"
                     placeholder="Nhập tin nhắn..."
