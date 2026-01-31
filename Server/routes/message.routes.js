@@ -49,9 +49,17 @@ router.patch("/:id", async (req, res) => {
       return res.status(403).json({ message: "No permission" });
     }
 
-    msg.text = text;
-    await msg.save();
+    // ⏱️ check thời gian
+    if (!canEditOrRecall(msg)) {
+      return res
+        .status(403)
+        .json({ message: "Edit time expired" });
+    }
 
+    msg.text = text;
+    msg.edited = true; // ✅ rất quan trọng
+    await msg.save();
+    req.app.get("io").emit("messageEdited", msg);
     res.json(msg);
   } catch (err) {
     res.status(500).json({ message: "Edit message failed" });
@@ -77,6 +85,36 @@ router.delete("/:id", async (req, res) => {
     res.status(500).json({ message: "Delete message failed" });
   }
 });
+
+// ↩️ RECALL MESSAGE
+router.patch("/:id/recall", async (req, res) => {
+  const { id } = req.params;
+  const { userId } = req.body;
+
+  try {
+    const msg = await Message.findById(id);
+    if (!msg) return res.status(404).json({ message: "Message not found" });
+
+    if (String(msg.fromId) !== String(userId)) {
+      return res.status(403).json({ message: "No permission" });
+    }
+
+    if (!canEditOrRecall(msg)) {
+      return res
+        .status(403)
+        .json({ message: "Recall time expired" });
+    }
+
+    msg.text = "Tin nhắn đã bị thu hồi";
+    msg.recalled = true;
+    await msg.save();
+    req.app.get("io").emit("messageRecalled", msg);
+    res.json(msg);
+  } catch (err) {
+    res.status(500).json({ message: "Recall message failed" });
+  }
+});
+
 
 
 
